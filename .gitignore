@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# XAMPP / local files
+xampp/
+scratch/
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
