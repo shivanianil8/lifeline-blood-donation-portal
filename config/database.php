@@ -6,13 +6,38 @@ $db_pass = getenv('DB_PASS') ?: '';
 $db_name = getenv('DB_NAME') ?: 'blood_donation_portal';
 $db_port = getenv('DB_PORT') ?: '3306';
 
-$conn = mysqli_connect(
-    $db_host,
-    $db_user,
-    $db_pass,
-    $db_name,
-    (int)$db_port
-);
+$conn = mysqli_init();
+
+if ($db_host !== 'localhost') {
+    mysqli_ssl_set(
+        $conn,
+        null,
+        null,
+        '/etc/ssl/certs/ca-certificates.crt',
+        null,
+        null
+    );
+
+    mysqli_real_connect(
+        $conn,
+        $db_host,
+        $db_user,
+        $db_pass,
+        $db_name,
+        (int)$db_port,
+        null,
+        MYSQLI_CLIENT_SSL
+    );
+} else {
+    mysqli_real_connect(
+        $conn,
+        $db_host,
+        $db_user,
+        $db_pass,
+        $db_name,
+        (int)$db_port
+    );
+}
 
 if (!$conn) {
     die("Database connection failed.");
