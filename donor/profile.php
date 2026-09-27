@@ -234,17 +234,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
                 if ($stmt)
                 {
                     mysqli_stmt_bind_param(
-                        $stmt,
-                        "iisis sss",
-                        $new_donor_id,
-                        $user_id,
-                        $blood_group,
-                        $age,
-                        $gender,
-                        $location,
-                        $address,
-                        $date_value
-                    );
+    $stmt,
+    "iisissss",
+    $new_donor_id,
+    $user_id,
+    $blood_group,
+    $age,
+    $gender,
+    $location,
+    $address,
+    $date_value
+);
                 }
             }
         }
