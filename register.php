@@ -9,6 +9,7 @@ $success = "";
 
 // Preselect role from GET parameter or POST or default to donor
 $selected_role = $_POST['role'] ?? ($_GET['role'] ?? 'donor');
+
 if ($selected_role !== 'donor' && $selected_role !== 'recipient') {
     $selected_role = 'donor';
 }
@@ -62,55 +63,91 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
                     PASSWORD_DEFAULT
                 );
 
-                $stmt = mysqli_prepare(
+                /*
+                 * TiDB does not allow AUTO_INCREMENT to be added
+                 * to the existing user_id column.
+                 *
+                 * Therefore, generate the next user ID explicitly.
+                 */
+                $id_result = mysqli_query(
                     $conn,
-                    "INSERT INTO users (name, email, password, phone, role) VALUES (?, ?, ?, ?, ?)"
+                    "SELECT COALESCE(MAX(user_id), 0) + 1 AS next_id FROM users"
                 );
 
-                if ($stmt)
+                if (!$id_result)
                 {
-                    mysqli_stmt_bind_param(
-                        $stmt,
-                        "sssss",
-                        $name,
-                        $email,
-                        $hashed_password,
-                        $phone,
-                        $role
-                    );
-
-                    if (mysqli_stmt_execute($stmt))
-                    {
-                        $new_user_id = mysqli_insert_id($conn);
-                        mysqli_stmt_close($stmt);
-
-                        // Auto-initialize recipient profile record if role is recipient
-                        if ($role == "recipient")
-                        {
-                            $rec_init = mysqli_prepare(
-                                $conn,
-                                "INSERT INTO recipients (user_id) VALUES (?)"
-                            );
-
-                            if ($rec_init)
-                            {
-                                mysqli_stmt_bind_param($rec_init, "i", $new_user_id);
-                                mysqli_stmt_execute($rec_init);
-                                mysqli_stmt_close($rec_init);
-                            }
-                        }
-
-                        $success = "Your account has been created successfully. You can now sign in.";
-                    }
-                    else
-                    {
-                        $message = "Registration failed. Please check your details and try again.";
-                        mysqli_stmt_close($stmt);
-                    }
+                    $message = "Unable to generate user ID.";
                 }
                 else
                 {
-                    $message = "Unable to process registration at this time.";
+                    $id_row = mysqli_fetch_assoc($id_result);
+                    $new_user_id = (int)$id_row['next_id'];
+
+                    $stmt = mysqli_prepare(
+                        $conn,
+                        "INSERT INTO users
+                        (
+                            user_id,
+                            name,
+                            email,
+                            password,
+                            phone,
+                            role
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)"
+                    );
+
+                    if ($stmt)
+                    {
+                        mysqli_stmt_bind_param(
+                            $stmt,
+                            "isssss",
+                            $new_user_id,
+                            $name,
+                            $email,
+                            $hashed_password,
+                            $phone,
+                            $role
+                        );
+
+                        if (mysqli_stmt_execute($stmt))
+                        {
+                            mysqli_stmt_close($stmt);
+
+                            // Auto-initialize recipient profile record
+                            // if role is recipient.
+                            if ($role == "recipient")
+                            {
+                                $rec_init = mysqli_prepare(
+                                    $conn,
+                                    "INSERT INTO recipients (user_id) VALUES (?)"
+                                );
+
+                                if ($rec_init)
+                                {
+                                    mysqli_stmt_bind_param(
+                                        $rec_init,
+                                        "i",
+                                        $new_user_id
+                                    );
+
+                                    mysqli_stmt_execute($rec_init);
+                                    mysqli_stmt_close($rec_init);
+                                }
+                            }
+
+                            $success = "Your account has been created successfully. You can now sign in.";
+                        }
+                        else
+                        {
+                            $message = "Registration failed. Please check your details and try again.";
+                            mysqli_stmt_close($stmt);
+                        }
+                    }
+                    else
+                    {
+                        $message = "Unable to process registration at this time.";
+                    }
                 }
             }
 
@@ -128,64 +165,134 @@ include "includes/header.php";
     <!-- LEFT SHOWCASE BANNER -->
     <div class="auth-split-showcase">
         <div class="auth-showcase-content">
-            <span class="eyebrow" style="color: #E88394; margin-bottom: 16px;">JOIN THE LIFELINE NETWORK</span>
-            <h2>Be the reason a patient goes home to their family.</h2>
+
+            <span
+                class="eyebrow"
+                style="color: #E88394; margin-bottom: 16px;"
+            >
+                JOIN THE LIFELINE NETWORK
+            </span>
+
+            <h2>
+                Be the reason a patient goes home to their family.
+            </h2>
+
             <p>
-                Whether you are stepping up as a voluntary blood donor or seeking urgent transfusion support, our portal brings together compassion, speed, and clinical safety.
+                Whether you are stepping up as a voluntary blood donor
+                or seeking urgent transfusion support, our portal brings
+                together compassion, speed, and clinical safety.
             </p>
+
         </div>
 
         <div class="auth-showcase-quote">
+
             <blockquote>
-                “A single pint of blood can save up to three lives, and a single gesture of kindness can ripple across entire communities.”
+                “A single pint of blood can save up to three lives,
+                and a single gesture of kindness can ripple across
+                entire communities.”
             </blockquote>
+
             <cite>Clinical Transfusion Society</cite>
+
         </div>
 
         <div style="font-size: 13px; color: #78746F;">
             Safe & Confidential · Zero Registration Fees · Verified Clinical Facilities
         </div>
+
     </div>
 
     <!-- RIGHT FORM CARD -->
     <div class="auth-split-form-container">
+
         <div class="auth-box">
 
             <div class="auth-box-header">
-                <span class="eyebrow">NEW REGISTRATION</span>
-                <h1>Create your LIFELINE account</h1>
-                <p>Select your role and complete your registration below.</p>
+
+                <span class="eyebrow">
+                    NEW REGISTRATION
+                </span>
+
+                <h1>
+                    Create your LIFELINE account
+                </h1>
+
+                <p>
+                    Select your role and complete your registration below.
+                </p>
+
             </div>
 
             <div class="auth-card">
 
                 <?php if ($message != ""): ?>
+
                     <div class="message error">
-                        <span><?php echo htmlspecialchars($message); ?></span>
-                        <button type="button" class="alert-dismiss" style="background:none; border:none; color:inherit; font-size:16px; cursor:pointer;" aria-label="Dismiss">&times;</button>
+
+                        <span>
+                            <?php echo htmlspecialchars($message); ?>
+                        </span>
+
+                        <button
+                            type="button"
+                            class="alert-dismiss"
+                            style="background:none; border:none; color:inherit; font-size:16px; cursor:pointer;"
+                            aria-label="Dismiss"
+                        >
+                            &times;
+                        </button>
+
                     </div>
+
                 <?php endif; ?>
+
 
                 <?php if ($success != ""): ?>
+
                     <div class="message success">
+
                         <div>
-                            <strong>Success!</strong> <?php echo htmlspecialchars($success); ?>
+
+                            <strong>Success!</strong>
+
+                            <?php echo htmlspecialchars($success); ?>
+
                             <div style="margin-top: 8px;">
-                                <a href="login.php" style="color: #215939; font-weight: 700; text-decoration: underline;">
+
+                                <a
+                                    href="login.php"
+                                    style="color: #215939; font-weight: 700; text-decoration: underline;"
+                                >
                                     Click here to Sign In now →
                                 </a>
+
                             </div>
+
                         </div>
+
                     </div>
+
                 <?php endif; ?>
 
-                <form method="POST" action="register.php" class="register-form">
+
+                <form
+                    method="POST"
+                    action="register.php"
+                    class="register-form"
+                >
 
                     <!-- ROLE SELECTION CARDS -->
                     <div class="form-group">
-                        <label>Select Account Type</label>
+
+                        <label>
+                            Select Account Type
+                        </label>
+
                         <div class="role-grid">
+
                             <div class="role-card-option">
+
                                 <input
                                     type="radio"
                                     id="role-donor"
@@ -194,13 +301,25 @@ include "includes/header.php";
                                     <?php if ($selected_role === 'donor') echo 'checked'; ?>
                                     required
                                 >
-                                <label for="role-donor" class="role-card-label">
-                                    <span class="role-title">Blood Donor</span>
-                                    <span class="role-desc">I want to voluntarily donate blood</span>
+
+                                <label
+                                    for="role-donor"
+                                    class="role-card-label"
+                                >
+                                    <span class="role-title">
+                                        Blood Donor
+                                    </span>
+
+                                    <span class="role-desc">
+                                        I want to voluntarily donate blood
+                                    </span>
                                 </label>
+
                             </div>
 
+
                             <div class="role-card-option">
+
                                 <input
                                     type="radio"
                                     id="role-recipient"
@@ -208,17 +327,34 @@ include "includes/header.php";
                                     value="recipient"
                                     <?php if ($selected_role === 'recipient') echo 'checked'; ?>
                                 >
-                                <label for="role-recipient" class="role-card-label">
-                                    <span class="role-title">Recipient</span>
-                                    <span class="role-desc">I need blood for a patient</span>
+
+                                <label
+                                    for="role-recipient"
+                                    class="role-card-label"
+                                >
+                                    <span class="role-title">
+                                        Recipient
+                                    </span>
+
+                                    <span class="role-desc">
+                                        I need blood for a patient
+                                    </span>
                                 </label>
+
                             </div>
+
                         </div>
+
                     </div>
+
 
                     <!-- FULL NAME -->
                     <div class="form-group">
-                        <label for="name">Full Name</label>
+
+                        <label for="name">
+                            Full Name
+                        </label>
+
                         <input
                             type="text"
                             id="name"
@@ -227,11 +363,17 @@ include "includes/header.php";
                             placeholder="e.g. Dr. Jane Doe"
                             required
                         >
+
                     </div>
+
 
                     <!-- EMAIL -->
                     <div class="form-group">
-                        <label for="email">Email Address</label>
+
+                        <label for="email">
+                            Email Address
+                        </label>
+
                         <input
                             type="email"
                             id="email"
@@ -241,11 +383,17 @@ include "includes/header.php";
                             required
                             autocomplete="email"
                         >
+
                     </div>
+
 
                     <!-- PHONE -->
                     <div class="form-group">
-                        <label for="phone">Phone Number</label>
+
+                        <label for="phone">
+                            Phone Number
+                        </label>
+
                         <input
                             type="tel"
                             id="phone"
@@ -255,11 +403,17 @@ include "includes/header.php";
                             maxlength="15"
                             required
                         >
+
                     </div>
+
 
                     <!-- PASSWORD -->
                     <div class="form-group">
-                        <label for="password">Password (Minimum 6 characters)</label>
+
+                        <label for="password">
+                            Password (Minimum 6 characters)
+                        </label>
+
                         <input
                             type="password"
                             id="password"
@@ -269,11 +423,17 @@ include "includes/header.php";
                             required
                             autocomplete="new-password"
                         >
+
                     </div>
+
 
                     <!-- CONFIRM PASSWORD -->
                     <div class="form-group">
-                        <label for="confirm_password">Confirm Password</label>
+
+                        <label for="confirm_password">
+                            Confirm Password
+                        </label>
+
                         <input
                             type="password"
                             id="confirm_password"
@@ -283,8 +443,16 @@ include "includes/header.php";
                             required
                             autocomplete="new-password"
                         >
-                        <small id="password-mismatch-msg" style="display: none; color: #A9344B;">Passwords do not match.</small>
+
+                        <small
+                            id="password-mismatch-msg"
+                            style="display: none; color: #A9344B;"
+                        >
+                            Passwords do not match.
+                        </small>
+
                     </div>
+
 
                     <button
                         type="submit"
@@ -297,18 +465,29 @@ include "includes/header.php";
 
                 </form>
 
+
                 <div class="auth-footer">
-                    <span>Already have an account?</span>
-                    <a href="login.php">Sign in to LIFELINE</a>
+
+                    <span>
+                        Already have an account?
+                    </span>
+
+                    <a href="login.php">
+                        Sign in to LIFELINE
+                    </a>
+
                 </div>
 
             </div>
 
         </div>
+
     </div>
 
 </section>
 
 <?php
+
 include "includes/footer.php";
+
 ?>
