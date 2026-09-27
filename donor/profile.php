@@ -3,11 +3,12 @@
 include "../includes/auth.php";
 include "../config/database.php";
 
+
 /* =========================
    DONOR ACCESS CHECK
 ========================= */
 
-if ($_SESSION['role'] != 'donor')
+if (!isset($_SESSION['role']) || $_SESSION['role'] != 'donor')
 {
     header("Location: ../login.php");
     exit();
@@ -126,7 +127,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
 
     else
     {
-
         /* Convert empty date to NULL */
 
         $date_value = ($last_donation_date == "")
@@ -138,7 +138,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
 
         $check_stmt = mysqli_prepare(
             $conn,
-            "SELECT user_id
+            "SELECT donor_id
              FROM donors
              WHERE user_id = ?"
         );
@@ -158,7 +158,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
         mysqli_stmt_close($check_stmt);
 
 
-        /* ---------- UPDATE ---------- */
+        /* ---------- UPDATE EXISTING PROFILE ---------- */
 
         if ($exists)
         {
@@ -187,49 +187,84 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
             );
         }
 
-        /* ---------- INSERT ---------- */
+
+        /* ---------- INSERT NEW PROFILE ---------- */
 
         else
         {
-            $stmt = mysqli_prepare(
+            /*
+             * TiDB is not auto-generating donor_id.
+             * Generate the next donor ID manually.
+             */
+
+            $id_result = mysqli_query(
                 $conn,
-                "INSERT INTO donors
-                 (user_id,
-                  blood_group,
-                  age,
-                  gender,
-                  location,
-                  address,
-                  last_donation_date)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "SELECT COALESCE(MAX(donor_id), 0) + 1 AS next_id
+                 FROM donors"
             );
 
-            mysqli_stmt_bind_param(
-                $stmt,
-                "isissss",
-                $user_id,
-                $blood_group,
-                $age,
-                $gender,
-                $location,
-                $address,
-                $date_value
-            );
+            if (!$id_result)
+            {
+                $message = "Unable to generate donor ID.";
+                $stmt = null;
+            }
+            else
+            {
+                $id_row = mysqli_fetch_assoc($id_result);
+
+                $new_donor_id = (int)$id_row['next_id'];
+
+
+                $stmt = mysqli_prepare(
+                    $conn,
+                    "INSERT INTO donors
+                    (
+                        donor_id,
+                        user_id,
+                        blood_group,
+                        age,
+                        gender,
+                        location,
+                        address,
+                        last_donation_date
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                );
+
+                if ($stmt)
+                {
+                    mysqli_stmt_bind_param(
+                        $stmt,
+                        "iisis sss",
+                        $new_donor_id,
+                        $user_id,
+                        $blood_group,
+                        $age,
+                        $gender,
+                        $location,
+                        $address,
+                        $date_value
+                    );
+                }
+            }
         }
 
 
         /* ---------- EXECUTE ---------- */
 
-        if (mysqli_stmt_execute($stmt))
+        if ($stmt)
         {
-            $success = "Your donor profile has been updated successfully.";
-        }
-        else
-        {
-            $message = "Unable to update your profile. Please try again.";
-        }
+            if (mysqli_stmt_execute($stmt))
+            {
+                $success = "Your donor profile has been updated successfully.";
+            }
+            else
+            {
+                $message = "Unable to update your profile. Please try again.";
+            }
 
-        mysqli_stmt_close($stmt);
+            mysqli_stmt_close($stmt);
+        }
     }
 }
 
@@ -331,7 +366,7 @@ include "donor-layout.php";
 
                     <input
                         type="text"
-                        value="<?php echo htmlspecialchars($user['name']); ?>"
+                        value="<?php echo htmlspecialchars($user['name'] ?? ''); ?>"
                         disabled
                     >
 
@@ -352,7 +387,7 @@ include "donor-layout.php";
 
                     <input
                         type="email"
-                        value="<?php echo htmlspecialchars($user['email']); ?>"
+                        value="<?php echo htmlspecialchars($user['email'] ?? ''); ?>"
                         disabled
                     >
 
@@ -373,7 +408,7 @@ include "donor-layout.php";
 
                     <input
                         type="text"
-                        value="<?php echo htmlspecialchars($user['phone']); ?>"
+                        value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>"
                         disabled
                     >
 
