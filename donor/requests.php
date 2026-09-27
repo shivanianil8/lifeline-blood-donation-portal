@@ -29,12 +29,20 @@ $stmt = mysqli_prepare(
      WHERE user_id = ?"
 );
 
-mysqli_stmt_bind_param($stmt, "i", $user_id);
+mysqli_stmt_bind_param(
+    $stmt,
+    "i",
+    $user_id
+);
+
 mysqli_stmt_execute($stmt);
 
 $result = mysqli_stmt_get_result($stmt);
+
 $donor = mysqli_fetch_assoc($result);
+
 mysqli_stmt_close($stmt);
+
 
 if (!$donor)
 {
@@ -66,7 +74,9 @@ if (isset($_POST['donate_request']))
     }
     else
     {
-        $request_id = intval($_POST['request_id'] ?? 0);
+        $request_id = intval(
+            $_POST['request_id'] ?? 0
+        );
 
         if ($request_id <= 0)
         {
@@ -79,7 +89,10 @@ if (isset($_POST['donate_request']))
 
             try
             {
-                // 1. Fetch request details
+                /* =================================================
+                   1. FETCH REQUEST DETAILS
+                ================================================= */
+
                 $stmt = mysqli_prepare(
                     $conn,
                     "SELECT
@@ -96,42 +109,89 @@ if (isset($_POST['donate_request']))
                      FOR UPDATE"
                 );
 
-                mysqli_stmt_bind_param($stmt, "i", $request_id);
+                mysqli_stmt_bind_param(
+                    $stmt,
+                    "i",
+                    $request_id
+                );
+
                 mysqli_stmt_execute($stmt);
+
                 $res = mysqli_stmt_get_result($stmt);
+
                 $request = mysqli_fetch_assoc($res);
+
                 mysqli_stmt_close($stmt);
+
 
                 if (!$request)
                 {
-                    throw new Exception("This blood request was not found.");
+                    throw new Exception(
+                        "This blood request was not found."
+                    );
                 }
 
-                $req_status = strtolower($request['status'] ?? 'pending');
 
-                // 2. Validate request is active
+                /* =================================================
+                   2. VALIDATE REQUEST IS ACTIVE
+                ================================================= */
+
+                $req_status = strtolower(
+                    $request['status'] ?? 'pending'
+                );
+
+
                 if ($req_status === 'cancelled')
                 {
-                    throw new Exception("This blood request has been cancelled.");
+                    throw new Exception(
+                        "This blood request has been cancelled."
+                    );
                 }
+
 
                 if ($req_status === 'fulfilled')
                 {
-                    throw new Exception("This request has already been fulfilled.");
+                    throw new Exception(
+                        "This request has already been fulfilled."
+                    );
                 }
 
-                // 3. Verify blood group compatibility
+
+                /* =================================================
+                   3. VERIFY BLOOD GROUP COMPATIBILITY
+                ================================================= */
+
                 if ($request['blood_group'] !== $blood_group)
                 {
-                    throw new Exception("Blood group mismatch: Request requires " . htmlspecialchars($request['blood_group']) . ".");
+                    throw new Exception(
+                        "Blood group mismatch: Request requires "
+                        . htmlspecialchars($request['blood_group'])
+                        . "."
+                    );
                 }
 
-                // 4. Verify remaining units > 0
-                $units_summary = get_request_units_summary($conn, $request_id);
+
+                /* =================================================
+                   4. VERIFY REMAINING UNITS
+                ================================================= */
+
+                $units_summary = get_request_units_summary(
+                    $conn,
+                    $request_id
+                );
+
+
                 if ($units_summary['remaining'] <= 0)
                 {
-                    throw new Exception("This request has already been fulfilled.");
+                    throw new Exception(
+                        "This request has already been fulfilled."
+                    );
                 }
+
+
+                /* =================================================
+                   5. CHECK FOR EXISTING ACTIVE APPOINTMENT
+                ================================================= */
 
                 $check = mysqli_prepare(
                     $conn,
@@ -143,6 +203,7 @@ if (isset($_POST['donate_request']))
                      AND status IN ('pending', 'confirmed')"
                 );
 
+
                 mysqli_stmt_bind_param(
                     $check,
                     "iss",
@@ -150,22 +211,67 @@ if (isset($_POST['donate_request']))
                     $request['hospital'],
                     $request['required_date']
                 );
+
+
                 mysqli_stmt_execute($check);
+
                 $check_result = mysqli_stmt_get_result($check);
-                $existing = mysqli_fetch_assoc($check_result);
+
+                $existing = mysqli_fetch_assoc(
+                    $check_result
+                );
+
                 mysqli_stmt_close($check);
+
 
                 if ($existing)
                 {
-                    throw new Exception("You already have an active scheduled appointment for this request.");
+                    throw new Exception(
+                        "You already have an active scheduled appointment for this request."
+                    );
                 }
 
-                // 6. Create appointment
+
+                /* =================================================
+                   6. GENERATE APPOINTMENT ID FOR TIDB
+                ================================================= */
+
+                $appointment_id_result = mysqli_query(
+                    $conn,
+                    "SELECT COALESCE(MAX(appointment_id), 0) + 1 AS next_id
+                     FROM appointments"
+                );
+
+
+                if (!$appointment_id_result)
+                {
+                    throw new Exception(
+                        "Unable to generate appointment ID."
+                    );
+                }
+
+
+                $appointment_id_row = mysqli_fetch_assoc(
+                    $appointment_id_result
+                );
+
+
+                $new_appointment_id =
+                    (int)$appointment_id_row['next_id'];
+
+
+                /* =================================================
+                   7. CREATE APPOINTMENT
+                ================================================= */
+
                 $appointment_time = "10:00:00";
+
+
                 $insert = mysqli_prepare(
                     $conn,
                     "INSERT INTO appointments
                     (
+                        appointment_id,
                         donor_id,
                         request_id,
                         hospital,
@@ -173,12 +279,31 @@ if (isset($_POST['donate_request']))
                         appointment_time,
                         status
                     )
-                    VALUES (?, ?, ?, ?, ?, 'pending')"
+                    VALUES
+                    (
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        'pending'
+                    )"
                 );
+
+
+                if (!$insert)
+                {
+                    throw new Exception(
+                        "Unable to prepare appointment."
+                    );
+                }
+
 
                 mysqli_stmt_bind_param(
                     $insert,
-                    "iisss",
+                    "iiisss",
+                    $new_appointment_id,
                     $donor_id,
                     $request_id,
                     $request['hospital'],
@@ -186,40 +311,134 @@ if (isset($_POST['donate_request']))
                     $appointment_time
                 );
 
+
                 if (!mysqli_stmt_execute($insert))
                 {
-                    throw new Exception("Failed to create appointment. Please try again.");
+                    throw new Exception(
+                        "Failed to create appointment: "
+                        . mysqli_stmt_error($insert)
+                    );
                 }
+
 
                 mysqli_stmt_close($insert);
 
-                // 7. If request status was pending, transition to matched
-                sync_request_status($conn, $request_id);
 
-                // 8. Notifications
-                $rec_stmt = mysqli_prepare($conn, "SELECT r.user_id FROM blood_requests br JOIN recipients r ON br.recipient_id = r.recipient_id OR br.recipient_id = r.user_id WHERE br.request_id = ? LIMIT 1");
-                if ($rec_stmt) {
-                    mysqli_stmt_bind_param($rec_stmt, "i", $request_id);
+                /* =================================================
+                   8. UPDATE REQUEST LIFECYCLE
+                ================================================= */
+
+                sync_request_status(
+                    $conn,
+                    $request_id
+                );
+
+
+                /* =================================================
+                   9. NOTIFY RECIPIENT
+                ================================================= */
+
+                $rec_stmt = mysqli_prepare(
+                    $conn,
+                    "SELECT r.user_id
+                     FROM blood_requests br
+                     JOIN recipients r
+                       ON br.recipient_id = r.recipient_id
+                       OR br.recipient_id = r.user_id
+                     WHERE br.request_id = ?
+                     LIMIT 1"
+                );
+
+
+                if ($rec_stmt)
+                {
+                    mysqli_stmt_bind_param(
+                        $rec_stmt,
+                        "i",
+                        $request_id
+                    );
+
                     mysqli_stmt_execute($rec_stmt);
-                    $rec_res = mysqli_stmt_get_result($rec_stmt);
-                    $rec_row = mysqli_fetch_assoc($rec_res);
+
+                    $rec_res = mysqli_stmt_get_result(
+                        $rec_stmt
+                    );
+
+                    $rec_row = mysqli_fetch_assoc(
+                        $rec_res
+                    );
+
                     mysqli_stmt_close($rec_stmt);
-                    if ($rec_row && !empty($rec_row['user_id'])) {
-                        $donor_display_name = !empty($_SESSION['name']) ? $_SESSION['name'] : 'A voluntary donor';
-                        create_notification($conn, (int)$rec_row['user_id'], "Your blood request #$request_id received a donor response from $donor_display_name for " . date("d M Y", strtotime($request['required_date'])), 'donor_response', $request_id);
+
+
+                    if (
+                        $rec_row &&
+                        !empty($rec_row['user_id'])
+                    )
+                    {
+                        $donor_display_name =
+                            !empty($_SESSION['name'])
+                            ? $_SESSION['name']
+                            : 'A voluntary donor';
+
+
+                        create_notification(
+                            $conn,
+                            (int)$rec_row['user_id'],
+                            "Your blood request #$request_id received a donor response from $donor_display_name for "
+                            . date(
+                                "d M Y",
+                                strtotime(
+                                    $request['required_date']
+                                )
+                            ),
+                            'donor_response',
+                            $request_id
+                        );
                     }
                 }
-                create_notification($conn, $user_id, "Your appointment has been scheduled at " . htmlspecialchars($request['hospital']) . " for " . date("d M Y", strtotime($request['required_date'])), 'appointment', $request_id);
+
+
+                /* =================================================
+                   10. NOTIFY DONOR
+                ================================================= */
+
+                create_notification(
+                    $conn,
+                    $user_id,
+                    "Your appointment has been scheduled at "
+                    . htmlspecialchars($request['hospital'])
+                    . " for "
+                    . date(
+                        "d M Y",
+                        strtotime(
+                            $request['required_date']
+                        )
+                    ),
+                    'appointment',
+                    $request_id
+                );
+
+
+                /* =================================================
+                   11. COMMIT TRANSACTION
+                ================================================= */
 
                 mysqli_commit($conn);
 
-                $message = "Thank you for volunteering! Your donation appointment has been scheduled.";
+
+                $message =
+                    "Thank you for volunteering! Your donation appointment has been scheduled.";
+
                 $message_type = "success";
             }
+
             catch (Exception $e)
             {
                 mysqli_rollback($conn);
+
                 $message = $e->getMessage();
+
                 $message_type = "error";
             }
         }
@@ -232,6 +451,7 @@ if (isset($_POST['donate_request']))
 ===================================================== */
 
 $requests = array();
+
 
 if (!empty($blood_group))
 {
@@ -249,7 +469,11 @@ if (!empty($blood_group))
             status
          FROM blood_requests
          WHERE blood_group = ?
-         AND status IN ('pending', 'matched', 'partially_fulfilled')
+         AND status IN (
+             'pending',
+             'matched',
+             'partially_fulfilled'
+         )
          ORDER BY
             CASE
                 WHEN priority = 'critical' THEN 1
@@ -259,26 +483,36 @@ if (!empty($blood_group))
             required_date ASC"
     );
 
+
     mysqli_stmt_bind_param(
         $stmt,
         "s",
         $blood_group
     );
 
+
     mysqli_stmt_execute($stmt);
+
     $result = mysqli_stmt_get_result($stmt);
+
 
     while ($row = mysqli_fetch_assoc($result))
     {
         $requests[] = $row;
     }
 
+
     mysqli_stmt_close($stmt);
 }
 
 
-/* Check which requests this donor already has active appointments for */
+/* =====================================================
+   CHECK WHICH REQUESTS HAVE ACTIVE APPOINTMENTS
+===================================================== */
+
 $donor_active_req_ids = [];
+
+
 if ($donor_id > 0)
 {
     $chk_appt = mysqli_prepare(
@@ -289,15 +523,30 @@ if ($donor_id > 0)
          AND status IN ('pending', 'confirmed')"
     );
 
+
     if ($chk_appt)
     {
-        mysqli_stmt_bind_param($chk_appt, "i", $donor_id);
+        mysqli_stmt_bind_param(
+            $chk_appt,
+            "i",
+            $donor_id
+        );
+
+
         mysqli_stmt_execute($chk_appt);
-        $res = mysqli_stmt_get_result($chk_appt);
+
+        $res = mysqli_stmt_get_result(
+            $chk_appt
+        );
+
+
         while ($r = mysqli_fetch_assoc($res))
         {
-            $donor_active_req_ids[] = (int)$r['request_id'];
+            $donor_active_req_ids[] =
+                (int)$r['request_id'];
         }
+
+
         mysqli_stmt_close($chk_appt);
     }
 }
@@ -311,223 +560,702 @@ include "donor-layout.php";
 
 ?>
 
+
 <section class="content">
 
+
     <div class="page-heading">
+
         <p class="eyebrow">
             BLOOD REQUESTS
         </p>
+
 
         <h1>
             Requests that need you
         </h1>
 
+
         <p class="subtitle">
             View verified blood requests matching your registered blood group.
         </p>
+
     </div>
+
+
 
     <?php if ($message != "") { ?>
-        <div class="<?php echo $message_type === 'success' ? 'success-message' : 'error-message'; ?>">
-            <span><?php echo htmlspecialchars($message); ?></span>
+
+        <div
+            class="<?php
+                echo $message_type === 'success'
+                    ? 'success-message'
+                    : 'error-message';
+            ?>"
+        >
+
+            <span>
+                <?php
+                echo htmlspecialchars($message);
+                ?>
+            </span>
+
         </div>
+
     <?php } ?>
 
+
+
     <!-- DONOR INFORMATION BAR -->
+
     <div class="request-filter-bar">
-        <div>
-            <span class="filter-label">YOUR BLOOD GROUP</span>
-            <strong><?php echo htmlspecialchars($blood_group); ?></strong>
-        </div>
 
         <div>
-            <span class="filter-label">YOUR LOCATION</span>
-            <strong><?php echo htmlspecialchars($donor_location); ?></strong>
+
+            <span class="filter-label">
+                YOUR BLOOD GROUP
+            </span>
+
+            <strong>
+                <?php
+                echo htmlspecialchars($blood_group);
+                ?>
+            </strong>
+
         </div>
+
+
+        <div>
+
+            <span class="filter-label">
+                YOUR LOCATION
+            </span>
+
+            <strong>
+                <?php
+                echo htmlspecialchars($donor_location);
+                ?>
+            </strong>
+
+        </div>
+
     </div>
+
+
 
     <?php if (!empty($blood_group) && count($requests) > 0) { ?>
 
+
         <div class="request-list">
 
+
             <?php foreach ($requests as $request) { ?>
+
+
                 <?php
-                $req_id = (int)$request['request_id'];
-                $units_summary = get_request_units_summary($conn, $req_id);
-                $st = $units_summary['status'];
-                $req_units = $units_summary['required'];
-                $ful_units = $units_summary['fulfilled'];
-                $rem_units = $units_summary['remaining'];
-                $pct = $units_summary['percent'];
-                $priority = strtolower($request['priority'] ?? 'normal');
-                $has_active_appt = in_array($req_id, $donor_active_req_ids);
-                $is_fully_fulfilled = ($units_summary['remaining'] <= 0 || $st === 'fulfilled');
+
+                $req_id =
+                    (int)$request['request_id'];
+
+
+                $units_summary =
+                    get_request_units_summary(
+                        $conn,
+                        $req_id
+                    );
+
+
+                $st =
+                    $units_summary['status'];
+
+
+                $req_units =
+                    $units_summary['required'];
+
+
+                $ful_units =
+                    $units_summary['fulfilled'];
+
+
+                $rem_units =
+                    $units_summary['remaining'];
+
+
+                $pct =
+                    $units_summary['percent'];
+
+
+                $priority =
+                    strtolower(
+                        $request['priority'] ?? 'normal'
+                    );
+
+
+                $has_active_appt =
+                    in_array(
+                        $req_id,
+                        $donor_active_req_ids
+                    );
+
+
+                $is_fully_fulfilled =
+                    (
+                        $units_summary['remaining'] <= 0
+                        ||
+                        $st === 'fulfilled'
+                    );
+
                 ?>
+
 
                 <div class="request-card">
 
+
                     <!-- TOP -->
+
                     <div class="request-card-top">
+
+
                         <div>
+
+
                             <div class="request-blood-group">
-                                <?php echo htmlspecialchars($request['blood_group']); ?>
-                            </div>
-                            <span class="request-units">
-                                Request #<?php echo $req_id; ?>
-                            </span>
-                        </div>
 
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <span class="priority-badge priority-<?php echo htmlspecialchars($priority); ?>">
-                                <?php echo ucfirst(htmlspecialchars($priority)); ?>
-                            </span>
-
-                            <span class="badge badge-<?php echo htmlspecialchars(str_replace(' ', '_', $st)); ?>">
                                 <?php
-                                if ($st === 'partially_fulfilled') {
-                                    echo "Partially Fulfilled";
-                                } else {
-                                    echo ucfirst(htmlspecialchars($st));
-                                }
+                                echo htmlspecialchars(
+                                    $request['blood_group']
+                                );
                                 ?>
+
+                            </div>
+
+
+                            <span class="request-units">
+
+                                Request #
+
+                                <?php
+                                echo $req_id;
+                                ?>
+
                             </span>
+
+
                         </div>
+
+
+
+                        <div
+                            style="
+                                display: flex;
+                                gap: 8px;
+                                align-items: center;
+                            "
+                        >
+
+
+                            <span
+                                class="priority-badge priority-<?php
+                                    echo htmlspecialchars(
+                                        $priority
+                                    );
+                                ?>"
+                            >
+
+                                <?php
+                                echo ucfirst(
+                                    htmlspecialchars(
+                                        $priority
+                                    )
+                                );
+                                ?>
+
+                            </span>
+
+
+
+                            <span
+                                class="badge badge-<?php
+                                    echo htmlspecialchars(
+                                        str_replace(
+                                            ' ',
+                                            '_',
+                                            $st
+                                        )
+                                    );
+                                ?>"
+                            >
+
+                                <?php
+
+                                if (
+                                    $st ===
+                                    'partially_fulfilled'
+                                )
+                                {
+                                    echo "Partially Fulfilled";
+                                }
+                                else
+                                {
+                                    echo ucfirst(
+                                        htmlspecialchars($st)
+                                    );
+                                }
+
+                                ?>
+
+                            </span>
+
+
+                        </div>
+
+
                     </div>
+
+
 
                     <!-- HOSPITAL & PROGRESS -->
+
                     <div class="request-main">
-                        <h2><?php echo htmlspecialchars($request['hospital']); ?></h2>
-                        <p class="request-location">📍 <?php echo htmlspecialchars($request['location']); ?></p>
+
+
+                        <h2>
+
+                            <?php
+                            echo htmlspecialchars(
+                                $request['hospital']
+                            );
+                            ?>
+
+                        </h2>
+
+
+                        <p class="request-location">
+
+                            📍
+
+                            <?php
+                            echo htmlspecialchars(
+                                $request['location']
+                            );
+                            ?>
+
+                        </p>
+
+
 
                         <!-- PROGRESS BAR -->
+
                         <div style="margin-top: 14px;">
-                            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #555; margin-bottom: 4px;">
-                                <span>Fulfillment Progress</span>
-                                <span><?php echo $ful_units; ?> / <?php echo $req_units; ?> units (<?php echo $pct; ?>%)</span>
+
+
+                            <div
+                                style="
+                                    display: flex;
+                                    justify-content: space-between;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    color: #555;
+                                    margin-bottom: 4px;
+                                "
+                            >
+
+                                <span>
+                                    Fulfillment Progress
+                                </span>
+
+
+                                <span>
+
+                                    <?php
+                                    echo $ful_units;
+                                    ?>
+
+                                    /
+
+                                    <?php
+                                    echo $req_units;
+                                    ?>
+
+                                    units
+
+                                    (<?php
+                                    echo $pct;
+                                    ?>%)
+
+                                </span>
+
                             </div>
+
+
+
                             <div class="progress-container">
-                                <div class="progress-bar <?php if ($pct >= 100) echo 'fulfilled'; ?>" style="width: <?php echo $pct; ?>%;"></div>
+
+                                <div
+                                    class="progress-bar <?php
+
+                                        if ($pct >= 100)
+                                        {
+                                            echo 'fulfilled';
+                                        }
+
+                                    ?>"
+                                    style="
+                                        width:
+                                        <?php
+                                        echo $pct;
+                                        ?>%;
+                                    "
+                                ></div>
+
                             </div>
+
+
                         </div>
+
+
 
                         <!-- UNITS STAT GRID -->
+
                         <div class="units-stat-grid">
+
+
                             <div class="units-stat-item">
-                                <span>Total Required</span>
-                                <strong><?php echo $req_units; ?> units</strong>
+
+                                <span>
+                                    Total Required
+                                </span>
+
+                                <strong>
+                                    <?php
+                                    echo $req_units;
+                                    ?>
+                                    units
+                                </strong>
+
                             </div>
+
+
+
                             <div class="units-stat-item">
-                                <span>Fulfilled</span>
-                                <strong><?php echo $ful_units; ?> units</strong>
+
+                                <span>
+                                    Fulfilled
+                                </span>
+
+                                <strong>
+                                    <?php
+                                    echo $ful_units;
+                                    ?>
+                                    units
+                                </strong>
+
                             </div>
+
+
+
                             <div class="units-stat-item">
-                                <span>Still Needed</span>
-                                <strong class="highlight"><?php echo $rem_units; ?> units</strong>
+
+                                <span>
+                                    Still Needed
+                                </span>
+
+                                <strong class="highlight">
+                                    <?php
+                                    echo $rem_units;
+                                    ?>
+                                    units
+                                </strong>
+
                             </div>
+
+
                         </div>
+
+
 
                         <?php if (!empty($request['reason'])) { ?>
+
+
                             <p class="request-reason">
-                                <strong>Note:</strong> <?php echo nl2br(htmlspecialchars($request['reason'])); ?>
+
+                                <strong>
+                                    Note:
+                                </strong>
+
+                                <?php
+                                echo nl2br(
+                                    htmlspecialchars(
+                                        $request['reason']
+                                    )
+                                );
+                                ?>
+
                             </p>
+
+
                         <?php } ?>
+
+
                     </div>
+
+
 
                     <!-- DETAILS -->
+
                     <div class="request-details">
+
+
                         <div>
-                            <span>REQUIRED BY</span>
+
+                            <span>
+                                REQUIRED BY
+                            </span>
+
+
                             <strong>
+
                                 <?php
-                                if (!empty($request['required_date'])) {
-                                    echo date("d M Y", strtotime($request['required_date']));
-                                } else {
+
+                                if (
+                                    !empty(
+                                        $request['required_date']
+                                    )
+                                )
+                                {
+                                    echo date(
+                                        "d M Y",
+                                        strtotime(
+                                            $request['required_date']
+                                        )
+                                    );
+                                }
+                                else
+                                {
                                     echo "Immediate";
                                 }
+
                                 ?>
+
                             </strong>
+
                         </div>
+
+
 
                         <div>
-                            <span>STATUS</span>
+
+                            <span>
+                                STATUS
+                            </span>
+
+
                             <strong>
+
                                 <?php
-                                if ($st === 'partially_fulfilled') {
+
+                                if (
+                                    $st ===
+                                    'partially_fulfilled'
+                                )
+                                {
                                     echo "Partially Fulfilled";
-                                } else {
-                                    echo ucfirst(htmlspecialchars($st));
                                 }
+                                else
+                                {
+                                    echo ucfirst(
+                                        htmlspecialchars($st)
+                                    );
+                                }
+
                                 ?>
+
                             </strong>
+
                         </div>
+
+
                     </div>
 
+
+
                     <!-- ACTION BUTTON -->
+
                     <div class="request-action">
+
+
                         <?php if ($is_fully_fulfilled) { ?>
-                            <div style="padding: 10px; background: #FAF8F5; border: 1px solid #EBE7E1; border-radius: 8px; text-align: center; font-size: 12px; color: var(--muted); font-weight: 600;">
+
+
+                            <div
+                                style="
+                                    padding: 10px;
+                                    background: #FAF8F5;
+                                    border: 1px solid #EBE7E1;
+                                    border-radius: 8px;
+                                    text-align: center;
+                                    font-size: 12px;
+                                    color: var(--muted);
+                                    font-weight: 600;
+                                "
+                            >
+
                                 This request has already been fulfilled.
+
                             </div>
+
+
                         <?php } elseif ($has_active_appt) { ?>
-                            <div style="padding: 10px; background: #EBF3FA; border: 1px solid #CCE0F5; border-radius: 8px; text-align: center; font-size: 12px; color: #2B6CB0; font-weight: 600;">
-                                ✓ You have an active appointment scheduled for this request.
+
+
+                            <div
+                                style="
+                                    padding: 10px;
+                                    background: #EBF3FA;
+                                    border: 1px solid #CCE0F5;
+                                    border-radius: 8px;
+                                    text-align: center;
+                                    font-size: 12px;
+                                    color: #2B6CB0;
+                                    font-weight: 600;
+                                "
+                            >
+
+                                ✓ You have an active appointment
+                                scheduled for this request.
+
                             </div>
+
+
                         <?php } else { ?>
+
+
                             <form method="POST">
+
+
                                 <input
                                     type="hidden"
                                     name="request_id"
-                                    value="<?php echo $req_id; ?>"
+                                    value="<?php
+                                        echo $req_id;
+                                    ?>"
                                 >
+
+
                                 <button
                                     type="submit"
                                     name="donate_request"
                                     class="respond-button"
                                 >
-                                    I can donate (<?php echo $rem_units; ?> <?php echo $rem_units == 1 ? 'unit' : 'units'; ?> needed)
+
+                                    I can donate
+                                    (<?php
+                                    echo $rem_units;
+                                    ?>
+                                    <?php
+
+                                    echo $rem_units == 1
+                                        ? 'unit'
+                                        : 'units';
+
+                                    ?>
+                                    needed)
+
                                 </button>
+
+
                             </form>
+
+
                         <?php } ?>
+
+
                     </div>
+
 
                 </div>
 
+
             <?php } ?>
 
+
         </div>
+
 
     <?php } elseif (!empty($blood_group)) { ?>
 
+
         <div class="requests-empty-card">
+
+
             <div class="empty-icon">
                 ✓
             </div>
-            <h2>No active requests</h2>
+
+
+            <h2>
+                No active requests
+            </h2>
+
+
             <p>
-                There are currently no active blood requests matching your blood group (<?php echo htmlspecialchars($blood_group); ?>). You will see new urgent requests here as soon as they are submitted.
+
+                There are currently no active blood requests
+                matching your blood group
+                (<?php
+                echo htmlspecialchars($blood_group);
+                ?>).
+
+                You will see new urgent requests here
+                as soon as they are submitted.
+
             </p>
+
+
         </div>
+
 
     <?php } else { ?>
 
+
         <div class="requests-empty-card">
+
+
             <div class="empty-icon">
                 +
             </div>
-            <h2>Complete your donor profile</h2>
+
+
+            <h2>
+                Complete your donor profile
+            </h2>
+
+
             <p>
                 Add your blood group to see matching blood requests.
             </p>
-            <a href="profile.php" class="primary-button" style="margin-top: 14px;">
+
+
+            <a
+                href="profile.php"
+                class="primary-button"
+                style="margin-top: 14px;"
+            >
                 Complete Profile →
             </a>
+
+
         </div>
+
 
     <?php } ?>
 
+
 </section>
+
 
 </main>
 </div>
+
 </body>
 </html>
