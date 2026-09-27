@@ -60,18 +60,95 @@ function init_inventory_tables($conn)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
     mysqli_query($conn, $sql2);
 
-    // Seed 8 blood groups if not existing
+    /*
+     * Seed all 8 blood groups if they do not already exist.
+     *
+     * TiDB production compatibility:
+     * stock_id is not automatically generated in the imported
+     * production table, so generate it explicitly when a row
+     * needs to be inserted.
+     */
+
     $groups = get_supported_blood_groups();
+
     foreach ($groups as $bg) {
+
+        // Check whether this blood group already exists.
+        $check = mysqli_prepare(
+            $conn,
+            "SELECT stock_id
+             FROM blood_stock
+             WHERE blood_group = ?
+             LIMIT 1"
+        );
+
+        if (!$check) {
+            continue;
+        }
+
+        mysqli_stmt_bind_param(
+            $check,
+            "s",
+            $bg
+        );
+
+        mysqli_stmt_execute($check);
+
+        $result = mysqli_stmt_get_result($check);
+
+        $existing = mysqli_fetch_assoc($result);
+
+        mysqli_stmt_close($check);
+
+        // Already exists — leave the existing stock untouched.
+        if ($existing) {
+            continue;
+        }
+
+        // Generate the next stock ID manually for TiDB.
+        $id_result = mysqli_query(
+            $conn,
+            "SELECT COALESCE(MAX(stock_id), 0) + 1 AS next_id
+             FROM blood_stock"
+        );
+
+        if (!$id_result) {
+            continue;
+        }
+
+        $id_row = mysqli_fetch_assoc($id_result);
+
+        $new_stock_id =
+            (int)($id_row['next_id'] ?? 1);
+
+        if ($new_stock_id < 1) {
+            $new_stock_id = 1;
+        }
+
+        // Insert the missing blood-group stock row.
         $stmt = mysqli_prepare(
             $conn,
-            "INSERT INTO blood_stock (blood_group, units_available, reserved_units)
-             VALUES (?, 0, 0)
-             ON DUPLICATE KEY UPDATE blood_group = blood_group"
+            "INSERT INTO blood_stock
+            (
+                stock_id,
+                blood_group,
+                units_available,
+                reserved_units
+            )
+            VALUES (?, ?, 0, 0)"
         );
+
         if ($stmt) {
-            mysqli_stmt_bind_param($stmt, "s", $bg);
+
+            mysqli_stmt_bind_param(
+                $stmt,
+                "is",
+                $new_stock_id,
+                $bg
+            );
+
             mysqli_stmt_execute($stmt);
+
             mysqli_stmt_close($stmt);
         }
     }
