@@ -350,18 +350,18 @@ if (isset($_POST['submit_request']))
                 */
 
                 mysqli_stmt_bind_param(
-                    $stmt,
-                    "iisis ssss",
-                    $new_request_id,
-                    $recipient_id,
-                    $blood_group,
-                    $units_required,
-                    $hospital,
-                    $location,
-                    $required_date,
-                    $priority,
-                    $reason
-                );
+    $stmt,
+    "iisisssss",
+    $new_request_id,
+    $recipient_id,
+    $blood_group,
+    $units_required,
+    $hospital,
+    $location,
+    $required_date,
+    $priority,
+    $reason
+);
 
 
                 /*
