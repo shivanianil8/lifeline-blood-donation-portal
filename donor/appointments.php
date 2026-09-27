@@ -272,11 +272,33 @@ if (isset($_POST['complete_donation']))
 
                     try
                     {
-                        // 1. Insert donation
+                        // 1. Generate donation ID manually for TiDB
+                        $donation_id_result = mysqli_query(
+                            $conn,
+                            "SELECT COALESCE(MAX(donation_id), 0) + 1 AS next_id
+                             FROM donations"
+                        );
+
+                        if (!$donation_id_result)
+                        {
+                            throw new Exception("Unable to generate donation ID.");
+                        }
+
+                        $donation_id_row = mysqli_fetch_assoc($donation_id_result);
+
+                        $donation_id = (int)($donation_id_row['next_id'] ?? 1);
+
+                        if ($donation_id < 1)
+                        {
+                            $donation_id = 1;
+                        }
+
+                        // Insert donation
                         $stmt = mysqli_prepare(
                             $conn,
                             "INSERT INTO donations
                             (
+                                donation_id,
                                 donor_id,
                                 appointment_id,
                                 blood_group,
@@ -285,7 +307,7 @@ if (isset($_POST['complete_donation']))
                                 hospital
                             )
                             VALUES
-                            (?, ?, ?, ?, CURDATE(), ?)"
+                            (?, ?, ?, ?, ?, CURDATE(), ?)"
                         );
 
                         if (!$stmt)
@@ -295,7 +317,8 @@ if (isset($_POST['complete_donation']))
 
                         mysqli_stmt_bind_param(
                             $stmt,
-                            "iisis",
+                            "iiisis",
+                            $donation_id,
                             $donor_id,
                             $appointment_id,
                             $appointment['blood_group'],
@@ -308,7 +331,6 @@ if (isset($_POST['complete_donation']))
                             throw new Exception(mysqli_stmt_error($stmt));
                         }
 
-                        $donation_id = mysqli_insert_id($conn);
                         mysqli_stmt_close($stmt);
 
                         // Atomically increment blood inventory for this blood group
