@@ -7,12 +7,24 @@ include "config/database.php";
 $message = "";
 $success = "";
 
-// Preselect role from GET parameter or POST or default to donor
+/*
+|--------------------------------------------------------------------------
+| PRESELECT ROLE
+|--------------------------------------------------------------------------
+*/
+
 $selected_role = $_POST['role'] ?? ($_GET['role'] ?? 'donor');
 
 if ($selected_role !== 'donor' && $selected_role !== 'recipient') {
     $selected_role = 'donor';
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| HANDLE REGISTRATION
+|--------------------------------------------------------------------------
+*/
 
 if ($_SERVER["REQUEST_METHOD"] == "POST")
 {
@@ -23,65 +35,145 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
     $phone = trim($_POST["phone"] ?? '');
     $role = $_POST["role"] ?? '';
 
-    if (empty($name) || empty($email) || empty($password) || empty($phone))
+
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+        empty($name) ||
+        empty($email) ||
+        empty($password) ||
+        empty($phone)
+    )
     {
         $message = "Please fill in all required fields.";
     }
+
+    elseif (!filter_var($email, FILTER_VALIDATE_EMAIL))
+    {
+        $message = "Please enter a valid email address.";
+    }
+
     elseif ($role != "donor" && $role != "recipient")
     {
         $message = "Please select a valid account role (Donor or Recipient).";
     }
+
     elseif (strlen($password) < 6)
     {
         $message = "Password must be at least 6 characters long.";
     }
-    elseif (!empty($confirm_password) && $password !== $confirm_password)
+
+    elseif ($password !== $confirm_password)
     {
         $message = "Passwords do not match. Please verify and try again.";
     }
+
     else
     {
+        /*
+        |--------------------------------------------------------------------------
+        | CHECK DUPLICATE EMAIL
+        |--------------------------------------------------------------------------
+        */
+
         $check = mysqli_prepare(
             $conn,
-            "SELECT user_id FROM users WHERE email = ?"
+            "SELECT user_id
+             FROM users
+             WHERE email = ?
+             LIMIT 1"
         );
 
-        if ($check)
+        if (!$check)
         {
-            mysqli_stmt_bind_param($check, "s", $email);
-            mysqli_stmt_execute($check);
-            mysqli_stmt_store_result($check);
+            $message = "Unable to process registration at this time.";
+        }
+        else
+        {
+            mysqli_stmt_bind_param(
+                $check,
+                "s",
+                $email
+            );
 
-            if (mysqli_stmt_num_rows($check) > 0)
+            mysqli_stmt_execute($check);
+
+            $check_result = mysqli_stmt_get_result($check);
+
+            $existing_user = mysqli_fetch_assoc($check_result);
+
+            mysqli_stmt_close($check);
+
+
+            if ($existing_user)
             {
                 $message = "An account with this email address already exists. Please sign in instead.";
             }
+
             else
             {
-                $hashed_password = password_hash(
-                    $password,
-                    PASSWORD_DEFAULT
-                );
-
                 /*
-                 * TiDB does not allow AUTO_INCREMENT to be added
-                 * to the existing user_id column.
-                 *
-                 * Therefore, generate the next user ID explicitly.
-                 */
-                $id_result = mysqli_query(
-                    $conn,
-                    "SELECT COALESCE(MAX(user_id), 0) + 1 AS next_id FROM users"
-                );
+                |--------------------------------------------------------------------------
+                | START TRANSACTION
+                |--------------------------------------------------------------------------
+                */
 
-                if (!$id_result)
+                mysqli_begin_transaction($conn);
+
+                try
                 {
-                    $message = "Unable to generate user ID.";
-                }
-                else
-                {
+                    /*
+                    |--------------------------------------------------------------------------
+                    | GENERATE USER ID
+                    |--------------------------------------------------------------------------
+                    |
+                    | TiDB production database does not automatically generate
+                    | user_id, so we generate the next ID manually.
+                    |
+                    */
+
+                    $id_result = mysqli_query(
+                        $conn,
+                        "SELECT COALESCE(MAX(user_id), 0) + 1 AS next_id
+                         FROM users"
+                    );
+
+                    if (!$id_result)
+                    {
+                        throw new Exception("Unable to generate user ID.");
+                    }
+
                     $id_row = mysqli_fetch_assoc($id_result);
+
                     $new_user_id = (int)$id_row['next_id'];
+
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | HASH PASSWORD
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $hashed_password = password_hash(
+                        $password,
+                        PASSWORD_DEFAULT
+                    );
+
+                    if ($hashed_password === false)
+                    {
+                        throw new Exception("Unable to secure password.");
+                    }
+
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | INSERT USER
+                    |--------------------------------------------------------------------------
+                    */
 
                     $stmt = mysqli_prepare(
                         $conn,
@@ -97,73 +189,153 @@ if ($_SERVER["REQUEST_METHOD"] == "POST")
                         VALUES (?, ?, ?, ?, ?, ?)"
                     );
 
-                    if ($stmt)
+                    if (!$stmt)
                     {
-                        mysqli_stmt_bind_param(
-                            $stmt,
-                            "isssss",
-                            $new_user_id,
-                            $name,
-                            $email,
-                            $hashed_password,
-                            $phone,
-                            $role
+                        throw new Exception("Unable to prepare user registration.");
+                    }
+
+                    mysqli_stmt_bind_param(
+                        $stmt,
+                        "isssss",
+                        $new_user_id,
+                        $name,
+                        $email,
+                        $hashed_password,
+                        $phone,
+                        $role
+                    );
+
+                    if (!mysqli_stmt_execute($stmt))
+                    {
+                        throw new Exception(
+                            mysqli_stmt_error($stmt)
+                        );
+                    }
+
+                    mysqli_stmt_close($stmt);
+
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | INITIALIZE RECIPIENT PROFILE
+                    |--------------------------------------------------------------------------
+                    |
+                    | recipients.recipient_id also does not auto-generate
+                    | in the TiDB production database.
+                    |
+                    */
+
+                    if ($role == "recipient")
+                    {
+                        /*
+                        | Generate next recipient ID
+                        */
+
+                        $recipient_id_result = mysqli_query(
+                            $conn,
+                            "SELECT COALESCE(MAX(recipient_id), 0) + 1 AS next_id
+                             FROM recipients"
                         );
 
-                        if (mysqli_stmt_execute($stmt))
+                        if (!$recipient_id_result)
                         {
-                            mysqli_stmt_close($stmt);
-
-                            // Auto-initialize recipient profile record
-                            // if role is recipient.
-                            if ($role == "recipient")
-                            {
-                                $rec_init = mysqli_prepare(
-                                    $conn,
-                                    "INSERT INTO recipients (user_id) VALUES (?)"
-                                );
-
-                                if ($rec_init)
-                                {
-                                    mysqli_stmt_bind_param(
-                                        $rec_init,
-                                        "i",
-                                        $new_user_id
-                                    );
-
-                                    mysqli_stmt_execute($rec_init);
-                                    mysqli_stmt_close($rec_init);
-                                }
-                            }
-
-                            $success = "Your account has been created successfully. You can now sign in.";
+                            throw new Exception(
+                                "Unable to generate recipient ID."
+                            );
                         }
-                        else
+
+                        $recipient_id_row = mysqli_fetch_assoc(
+                            $recipient_id_result
+                        );
+
+                        $new_recipient_id =
+                            (int)$recipient_id_row['next_id'];
+
+
+                        /*
+                        | Insert recipient profile
+                        */
+
+                        $rec_init = mysqli_prepare(
+                            $conn,
+                            "INSERT INTO recipients
+                            (
+                                recipient_id,
+                                user_id
+                            )
+                            VALUES (?, ?)"
+                        );
+
+                        if (!$rec_init)
                         {
-                            $message = "Registration failed. Please check your details and try again.";
-                            mysqli_stmt_close($stmt);
+                            throw new Exception(
+                                "Unable to prepare recipient profile."
+                            );
                         }
+
+                        mysqli_stmt_bind_param(
+                            $rec_init,
+                            "ii",
+                            $new_recipient_id,
+                            $new_user_id
+                        );
+
+                        if (!mysqli_stmt_execute($rec_init))
+                        {
+                            throw new Exception(
+                                mysqli_stmt_error($rec_init)
+                            );
+                        }
+
+                        mysqli_stmt_close($rec_init);
                     }
-                    else
-                    {
-                        $message = "Unable to process registration at this time.";
-                    }
+
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | COMMIT
+                    |--------------------------------------------------------------------------
+                    */
+
+                    mysqli_commit($conn);
+
+                    $success =
+                        "Your account has been created successfully. You can now sign in.";
+                }
+
+                catch (Exception $e)
+                {
+                    /*
+                    |--------------------------------------------------------------------------
+                    | ROLLBACK
+                    |--------------------------------------------------------------------------
+                    */
+
+                    mysqli_rollback($conn);
+
+                    $message =
+                        "Registration failed. Please check your details and try again.";
                 }
             }
-
-            mysqli_stmt_close($check);
         }
     }
 }
+
 
 include "includes/header.php";
 
 ?>
 
+
 <section class="auth-split-wrapper">
 
-    <!-- LEFT SHOWCASE BANNER -->
+
+    <!-- =========================================================
+         LEFT SHOWCASE BANNER
+    ========================================================== -->
+
     <div class="auth-split-showcase">
+
         <div class="auth-showcase-content">
 
             <span
@@ -185,6 +357,7 @@ include "includes/header.php";
 
         </div>
 
+
         <div class="auth-showcase-quote">
 
             <blockquote>
@@ -193,20 +366,32 @@ include "includes/header.php";
                 entire communities.”
             </blockquote>
 
-            <cite>Clinical Transfusion Society</cite>
+            <cite>
+                Clinical Transfusion Society
+            </cite>
 
         </div>
 
+
         <div style="font-size: 13px; color: #78746F;">
-            Safe & Confidential · Zero Registration Fees · Verified Clinical Facilities
+            Safe & Confidential · Zero Registration Fees ·
+            Verified Clinical Facilities
         </div>
 
     </div>
 
-    <!-- RIGHT FORM CARD -->
+
+
+    <!-- =========================================================
+         RIGHT FORM
+    ========================================================== -->
+
     <div class="auth-split-form-container">
 
         <div class="auth-box">
+
+
+            <!-- HEADER -->
 
             <div class="auth-box-header">
 
@@ -224,20 +409,35 @@ include "includes/header.php";
 
             </div>
 
+
+
+            <!-- CARD -->
+
             <div class="auth-card">
+
+
+                <!-- ERROR MESSAGE -->
 
                 <?php if ($message != ""): ?>
 
                     <div class="message error">
 
                         <span>
-                            <?php echo htmlspecialchars($message); ?>
+                            <?php
+                            echo htmlspecialchars($message);
+                            ?>
                         </span>
 
                         <button
                             type="button"
                             class="alert-dismiss"
-                            style="background:none; border:none; color:inherit; font-size:16px; cursor:pointer;"
+                            style="
+                                background:none;
+                                border:none;
+                                color:inherit;
+                                font-size:16px;
+                                cursor:pointer;
+                            "
                             aria-label="Dismiss"
                         >
                             &times;
@@ -248,21 +448,32 @@ include "includes/header.php";
                 <?php endif; ?>
 
 
+
+                <!-- SUCCESS MESSAGE -->
+
                 <?php if ($success != ""): ?>
 
                     <div class="message success">
 
                         <div>
 
-                            <strong>Success!</strong>
+                            <strong>
+                                Success!
+                            </strong>
 
-                            <?php echo htmlspecialchars($success); ?>
+                            <?php
+                            echo htmlspecialchars($success);
+                            ?>
 
                             <div style="margin-top: 8px;">
 
                                 <a
                                     href="login.php"
-                                    style="color: #215939; font-weight: 700; text-decoration: underline;"
+                                    style="
+                                        color: #215939;
+                                        font-weight: 700;
+                                        text-decoration: underline;
+                                    "
                                 >
                                     Click here to Sign In now →
                                 </a>
@@ -276,20 +487,31 @@ include "includes/header.php";
                 <?php endif; ?>
 
 
+
+                <!-- =================================================
+                     REGISTRATION FORM
+                ================================================== -->
+
                 <form
                     method="POST"
                     action="register.php"
                     class="register-form"
                 >
 
-                    <!-- ROLE SELECTION CARDS -->
+
+                    <!-- ROLE SELECTION -->
+
                     <div class="form-group">
 
                         <label>
                             Select Account Type
                         </label>
 
+
                         <div class="role-grid">
+
+
+                            <!-- DONOR -->
 
                             <div class="role-card-option">
 
@@ -298,7 +520,14 @@ include "includes/header.php";
                                     id="role-donor"
                                     name="role"
                                     value="donor"
-                                    <?php if ($selected_role === 'donor') echo 'checked'; ?>
+
+                                    <?php
+                                    if ($selected_role === 'donor')
+                                    {
+                                        echo 'checked';
+                                    }
+                                    ?>
+
                                     required
                                 >
 
@@ -306,6 +535,7 @@ include "includes/header.php";
                                     for="role-donor"
                                     class="role-card-label"
                                 >
+
                                     <span class="role-title">
                                         Blood Donor
                                     </span>
@@ -313,10 +543,14 @@ include "includes/header.php";
                                     <span class="role-desc">
                                         I want to voluntarily donate blood
                                     </span>
+
                                 </label>
 
                             </div>
 
+
+
+                            <!-- RECIPIENT -->
 
                             <div class="role-card-option">
 
@@ -325,13 +559,20 @@ include "includes/header.php";
                                     id="role-recipient"
                                     name="role"
                                     value="recipient"
-                                    <?php if ($selected_role === 'recipient') echo 'checked'; ?>
+
+                                    <?php
+                                    if ($selected_role === 'recipient')
+                                    {
+                                        echo 'checked';
+                                    }
+                                    ?>
                                 >
 
                                 <label
                                     for="role-recipient"
                                     class="role-card-label"
                                 >
+
                                     <span class="role-title">
                                         Recipient
                                     </span>
@@ -339,16 +580,20 @@ include "includes/header.php";
                                     <span class="role-desc">
                                         I need blood for a patient
                                     </span>
+
                                 </label>
 
                             </div>
+
 
                         </div>
 
                     </div>
 
 
+
                     <!-- FULL NAME -->
+
                     <div class="form-group">
 
                         <label for="name">
@@ -359,7 +604,11 @@ include "includes/header.php";
                             type="text"
                             id="name"
                             name="name"
-                            value="<?php echo htmlspecialchars($_POST['name'] ?? ''); ?>"
+                            value="<?php
+                                echo htmlspecialchars(
+                                    $_POST['name'] ?? ''
+                                );
+                            ?>"
                             placeholder="e.g. Dr. Jane Doe"
                             required
                         >
@@ -367,7 +616,9 @@ include "includes/header.php";
                     </div>
 
 
+
                     <!-- EMAIL -->
+
                     <div class="form-group">
 
                         <label for="email">
@@ -378,7 +629,11 @@ include "includes/header.php";
                             type="email"
                             id="email"
                             name="email"
-                            value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
+                            value="<?php
+                                echo htmlspecialchars(
+                                    $_POST['email'] ?? ''
+                                );
+                            ?>"
                             placeholder="e.g. jane@example.com"
                             required
                             autocomplete="email"
@@ -387,7 +642,9 @@ include "includes/header.php";
                     </div>
 
 
+
                     <!-- PHONE -->
+
                     <div class="form-group">
 
                         <label for="phone">
@@ -398,7 +655,11 @@ include "includes/header.php";
                             type="tel"
                             id="phone"
                             name="phone"
-                            value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>"
+                            value="<?php
+                                echo htmlspecialchars(
+                                    $_POST['phone'] ?? ''
+                                );
+                            ?>"
                             placeholder="e.g. +1 234 567 8900"
                             maxlength="15"
                             required
@@ -407,7 +668,9 @@ include "includes/header.php";
                     </div>
 
 
+
                     <!-- PASSWORD -->
+
                     <div class="form-group">
 
                         <label for="password">
@@ -427,7 +690,9 @@ include "includes/header.php";
                     </div>
 
 
+
                     <!-- CONFIRM PASSWORD -->
+
                     <div class="form-group">
 
                         <label for="confirm_password">
@@ -446,7 +711,10 @@ include "includes/header.php";
 
                         <small
                             id="password-mismatch-msg"
-                            style="display: none; color: #A9344B;"
+                            style="
+                                display: none;
+                                color: #A9344B;
+                            "
                         >
                             Passwords do not match.
                         </small>
@@ -454,17 +722,27 @@ include "includes/header.php";
                     </div>
 
 
+
+                    <!-- SUBMIT -->
+
                     <button
                         type="submit"
                         name="register"
                         class="primary-button"
-                        style="width: 100%; margin-top: 8px;"
+                        style="
+                            width: 100%;
+                            margin-top: 8px;
+                        "
                     >
                         Create My Account
                     </button>
 
+
                 </form>
 
+
+
+                <!-- AUTH FOOTER -->
 
                 <div class="auth-footer">
 
@@ -478,6 +756,7 @@ include "includes/header.php";
 
                 </div>
 
+
             </div>
 
         </div>
@@ -485,6 +764,8 @@ include "includes/header.php";
     </div>
 
 </section>
+
+
 
 <?php
 
