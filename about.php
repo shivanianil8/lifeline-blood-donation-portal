@@ -146,10 +146,10 @@ include "includes/header.php";
     <h2>Ready to make an immediate impact?</h2>
     <p>Join thousands of voluntary donors who stand ready to answer emergency calls in your city.</p>
     <div class="cta-actions">
-        <a href="/blood-donation-portal/register.php?role=donor" class="primary-button" style="background: #FFFFFF; color: #171717 !important;">
+        <a href="/register.php?role=donor" class="primary-button" style="background: #FFFFFF; color: #171717 !important;">
             Register as a Donor
         </a>
-        <a href="/blood-donation-portal/register.php?role=recipient" class="secondary-button btn-cta-secondary">
+        <a href="/register.php?role=recipient" class="secondary-button btn-cta-secondary">
             Request Blood Support
         </a>
     </div>

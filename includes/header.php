@@ -6,13 +6,13 @@ $is_logged_in = isset($_SESSION['role']) && !empty($_SESSION['role']);
 $user_role = $_SESSION['role'] ?? '';
 $user_name = $_SESSION['name'] ?? '';
 
-$dashboard_link = "/blood-donation-portal/index.php";
+$dashboard_link = "/index.php";
 if ($user_role === 'donor') {
-    $dashboard_link = "/blood-donation-portal/donor/dashboard.php";
+    $dashboard_link = "/donor/dashboard.php";
 } elseif ($user_role === 'recipient') {
-    $dashboard_link = "/blood-donation-portal/recipient/dashboard.php";
+    $dashboard_link = "/recipient/dashboard.php";
 } elseif ($user_role === 'admin') {
-    $dashboard_link = "/blood-donation-portal/admin/dashboard.php";
+    $dashboard_link = "/admin/dashboard.php";
 }
 ?>
 <!DOCTYPE html>
@@ -24,22 +24,22 @@ if ($user_role === 'donor') {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/blood-donation-portal/css/style.css?v=2.1">
+    <link rel="stylesheet" href="/css/style.css?v=2.1">
 </head>
 <body>
 
 <header class="site-header">
-    <a href="/blood-donation-portal/index.php" class="site-brand">
+    <a href="/index.php" class="site-brand">
         <span class="site-brand-mark">+</span>
         <span>LIFELINE</span>
     </a>
 
     <nav class="site-nav">
-        <a href="/blood-donation-portal/index.php#how-it-works">How it works</a>
-        <a href="/blood-donation-portal/index.php#for-donors">For donors</a>
-        <a href="/blood-donation-portal/index.php#for-recipients">For recipients</a>
-        <a href="/blood-donation-portal/index.php#compatibility">Compatibility</a>
-        <a href="/blood-donation-portal/about.php">About</a>
+        <a href="/index.php#how-it-works">How it works</a>
+        <a href="/index.php#for-donors">For donors</a>
+        <a href="/index.php#for-recipients">For recipients</a>
+        <a href="/index.php#compatibility">Compatibility</a>
+        <a href="/about.php">About</a>
     </nav>
 
     <div class="site-header-actions">
@@ -47,14 +47,14 @@ if ($user_role === 'donor') {
             <a href="<?php echo htmlspecialchars($dashboard_link); ?>" class="btn-nav-login">
                 Dashboard (<?php echo htmlspecialchars(ucfirst($user_role)); ?>)
             </a>
-            <a href="/blood-donation-portal/logout.php" class="btn-nav-register">
+            <a href="/logout.php" class="btn-nav-register">
                 Log out
             </a>
         <?php else: ?>
-            <a href="/blood-donation-portal/login.php" class="btn-nav-login">
+            <a href="/login.php" class="btn-nav-login">
                 Sign in
             </a>
-            <a href="/blood-donation-portal/register.php" class="btn-nav-register">
+            <a href="/register.php" class="btn-nav-register">
                 Join Network
             </a>
         <?php endif; ?>
@@ -73,7 +73,7 @@ if ($user_role === 'donor') {
 <div class="drawer-overlay"></div>
 <aside class="mobile-drawer">
     <div class="mobile-drawer-header">
-        <a href="/blood-donation-portal/index.php" class="site-brand">
+        <a href="/index.php" class="site-brand">
             <span class="site-brand-mark">+</span>
             <span>LIFELINE</span>
         </a>
@@ -86,12 +86,12 @@ if ($user_role === 'donor') {
     </div>
 
     <nav class="mobile-drawer-nav">
-        <a href="/blood-donation-portal/index.php">Home</a>
-        <a href="/blood-donation-portal/index.php#how-it-works">How it works</a>
-        <a href="/blood-donation-portal/index.php#for-donors">For Donors</a>
-        <a href="/blood-donation-portal/index.php#for-recipients">For Recipients</a>
-        <a href="/blood-donation-portal/index.php#compatibility">Compatibility Matrix</a>
-        <a href="/blood-donation-portal/about.php">About LIFELINE</a>
+        <a href="/index.php">Home</a>
+        <a href="/index.php#how-it-works">How it works</a>
+        <a href="/index.php#for-donors">For Donors</a>
+        <a href="/index.php#for-recipients">For Recipients</a>
+        <a href="/index.php#compatibility">Compatibility Matrix</a>
+        <a href="/about.php">About LIFELINE</a>
     </nav>
 
     <div class="mobile-drawer-footer">
@@ -99,14 +99,14 @@ if ($user_role === 'donor') {
             <a href="<?php echo htmlspecialchars($dashboard_link); ?>" class="primary-button" style="width: 100%;">
                 My Dashboard
             </a>
-            <a href="/blood-donation-portal/logout.php" class="secondary-button" style="width: 100%;">
+            <a href="/logout.php" class="secondary-button" style="width: 100%;">
                 Log out
             </a>
         <?php else: ?>
-            <a href="/blood-donation-portal/login.php" class="secondary-button" style="width: 100%;">
+            <a href="/login.php" class="secondary-button" style="width: 100%;">
                 Sign in
             </a>
-            <a href="/blood-donation-portal/register.php" class="primary-button" style="width: 100%;">
+            <a href="/register.php" class="primary-button" style="width: 100%;">
                 Join Network
             </a>
         <?php endif; ?>

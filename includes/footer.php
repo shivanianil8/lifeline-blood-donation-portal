@@ -4,7 +4,7 @@
     <div class="footer-inner">
         <!-- Col 1: Brand -->
         <div class="footer-brand">
-            <a href="/blood-donation-portal/index.php" class="site-brand">
+            <a href="/index.php" class="site-brand">
                 <span class="site-brand-mark">+</span>
                 <span>LIFELINE</span>
             </a>
@@ -17,10 +17,10 @@
         <div class="footer-col">
             <h5>Explore</h5>
             <ul>
-                <li><a href="/blood-donation-portal/index.php">Home</a></li>
-                <li><a href="/blood-donation-portal/about.php">About LIFELINE</a></li>
-                <li><a href="/blood-donation-portal/index.php#how-it-works">How It Works</a></li>
-                <li><a href="/blood-donation-portal/index.php#compatibility">Compatibility Matrix</a></li>
+                <li><a href="/index.php">Home</a></li>
+                <li><a href="/about.php">About LIFELINE</a></li>
+                <li><a href="/index.php#how-it-works">How It Works</a></li>
+                <li><a href="/index.php#compatibility">Compatibility Matrix</a></li>
             </ul>
         </div>
 
@@ -28,10 +28,10 @@
         <div class="footer-col">
             <h5>Portals</h5>
             <ul>
-                <li><a href="/blood-donation-portal/donor/dashboard.php">Donor Portal</a></li>
-                <li><a href="/blood-donation-portal/recipient/dashboard.php">Recipient Portal</a></li>
-                <li><a href="/blood-donation-portal/login.php">Sign In</a></li>
-                <li><a href="/blood-donation-portal/register.php">Join the Network</a></li>
+                <li><a href="/donor/dashboard.php">Donor Portal</a></li>
+                <li><a href="/recipient/dashboard.php">Recipient Portal</a></li>
+                <li><a href="/login.php">Sign In</a></li>
+                <li><a href="/register.php">Join the Network</a></li>
             </ul>
         </div>
 
@@ -50,6 +50,6 @@
     </div>
 </footer>
 
-<script src="/blood-donation-portal/js/main.js?v=2.1"></script>
+<script src="/js/main.js?v=2.1"></script>
 </body>
 </html>

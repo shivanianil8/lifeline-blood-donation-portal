@@ -47,10 +47,10 @@ include "includes/header.php";
             A modern, clinical-grade blood donation portal bridging compassionate donors with critical hospital needs. Instant blood group matching, transparent scheduling, and verified fulfillment.
         </p>
         <div class="hero-actions">
-            <a href="/blood-donation-portal/register.php?role=donor" class="primary-button">
+            <a href="/register.php?role=donor" class="primary-button">
                 Become a Donor
             </a>
-            <a href="/blood-donation-portal/register.php?role=recipient" class="secondary-button">
+            <a href="/register.php?role=recipient" class="secondary-button">
                 Request Blood
             </a>
             <a href="#how-it-works" style="margin-left: 12px; font-size: 14px; font-weight: 600; color: var(--text-secondary); text-decoration: underline;">
@@ -217,7 +217,7 @@ include "includes/header.php";
             </div>
 
             <div>
-                <a href="/blood-donation-portal/register.php?role=donor" class="primary-button">
+                <a href="/register.php?role=donor" class="primary-button">
                     Register as Blood Donor →
                 </a>
             </div>
@@ -253,7 +253,7 @@ include "includes/header.php";
             </div>
 
             <div>
-                <a href="/blood-donation-portal/register.php?role=recipient" class="secondary-button">
+                <a href="/register.php?role=recipient" class="secondary-button">
                     Request Blood Support →
                 </a>
             </div>
@@ -323,10 +323,10 @@ include "includes/header.php";
         Whether you are registering to donate blood for someone in your community or need urgent hospital support, LIFELINE connects you instantly.
     </p>
     <div class="cta-actions">
-        <a href="/blood-donation-portal/register.php" class="primary-button" style="background: #FFFFFF; color: #171717 !important;">
+        <a href="/register.php" class="primary-button" style="background: #FFFFFF; color: #171717 !important;">
             Create Free Account
         </a>
-        <a href="/blood-donation-portal/about.php" class="secondary-button btn-cta-secondary">
+        <a href="/about.php" class="secondary-button btn-cta-secondary">
             Learn More About LIFELINE
         </a>
     </div>
